@@ -20,18 +20,22 @@ class LidarColorizerNode(Node):
             PointCloud2, '/lidar/colorized_points', 10)
         self.semantic_pointcloud_pub = self.create_publisher(
             PointCloud2, '/lidar/semantic_points', 10)
+        self.rgbd_pub = self.create_publisher(
+            Image, '/camera/rgbd_image', 30)
+        self.depth_pub = self.create_publisher(
+            Image, '/camera/depth_image', 30)
         
         self.bridge = CvBridge()
         self.camera_image = None
         self.camera_image_rgb = None
 
         # Camera intrinsics (provided intrinsics)
-        self.K = np.array([[1043.02215,    0.     ,  963.4692], 
-                           [0, 1043.30157,  528.77189], 
-                           [0, 0, 1]])
+        self.K = np.array([[461.93834,   0.     , 318.05872], 
+                           [0.     , 464.33664, 231.33221], 
+                           [0.     ,   0.     ,   1.     ]])
 
         # Distortion coefficients (provided distortion coefficients)
-        self.dist_coeffs = np.array([0.153638, -0.143077, 0.003250, -0.001801, 0.000000])
+        self.dist_coeffs = np.array([0.183058, -0.240628, -0.001085, -0.002892, 0.000000])
 
         # Transformation from LiDAR to Camera (provided transformation)
         self.T_camera_lidar = self.create_transformation_matrix(
@@ -85,6 +89,24 @@ class LidarColorizerNode(Node):
                      (points_camera[2, :] > 0)
         valid_uvs = uvs_undistorted[:, valid_mask]
         valid_points = points_camera[:, valid_mask]
+
+        # Generate the depth map from the Z coordinates
+        depth_map = np.zeros((self.camera_image_rgb.shape[0], self.camera_image_rgb.shape[1]), dtype=np.float32)
+        depth_map[valid_uvs[1, :].astype(int), valid_uvs[0, :].astype(int)] = valid_points[2, :]
+        print(depth_map.max())
+        print(depth_map.min())
+        print(depth_map.shape)
+        # Normalize depth map for visualization (optional)
+        depth_map_normalized = cv2.normalize(depth_map, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+        # Create a 4-channel image (RGB + depth)
+        rgbd_image = np.dstack((self.camera_image_rgb, depth_map_normalized))
+        # Convert to ROS Image message and publish
+        rgbd_msg = self.bridge.cv2_to_imgmsg(rgbd_image, encoding='rgba8')
+        # Publish depth map as a separate grayscale image
+        depth_msg = self.bridge.cv2_to_imgmsg(depth_map, encoding='32FC1')  # Publish as 32-bit float image
+        
+
+
         # Assign colors to the valid points
         colors = 255 - self.camera_image_rgb[valid_uvs[1, :].astype(int), valid_uvs[0, :].astype(int)]
         semantic_colors = 255 - self.semantic_image_rgb[valid_uvs[1, :].astype(int), valid_uvs[0, :].astype(int)]
@@ -110,9 +132,13 @@ class LidarColorizerNode(Node):
         header = msg.header
         pc_data = create_cloud(header, fields, points_ready)
         semantic_pc_data = create_cloud(header, fields, semantic_points_ready)
+        depth_msg.header.stamp = self.get_clock().now().to_msg()
+        depth_msg.header.frame_id = "camera_frame"
         
         self.pointcloud_pub.publish(pc_data)
         self.semantic_pointcloud_pub.publish(semantic_pc_data)
+        self.rgbd_pub.publish(rgbd_msg)
+        self.depth_pub.publish(depth_msg)
 
     def create_transformation_matrix(self, translation, quaternion):
         """ Create a 4x4 transformation matrix from translation and quaternion """
