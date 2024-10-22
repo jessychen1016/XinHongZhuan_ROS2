@@ -7,7 +7,7 @@ from threading import Thread, Event
 import zmq
 import base64
 import numpy as np
-from utils.gstreamer_camera import GStreamerCamera  # Import your GStreamerCamera class
+from utils.gstreamer_camera_rstp import GStreamerCamera  # Import your GStreamerCamera class
 
 class MultiTopicPublisher(Node):
     def __init__(self):
@@ -30,7 +30,7 @@ class MultiTopicPublisher(Node):
         self.camera_info_publisher = self.create_publisher(CameraInfo, 'camera/camera_info', 10)
 
         # Initialize the GStreamer camera
-        self.gstreamer_camera = GStreamerCamera(device='/dev/video2', width=self.image_width, height=self.image_height, show_img=False)  # Adjust the device as needed
+        self.gstreamer_camera = GStreamerCamera(rtsp_url='rtsp://admin:admin123@10.1.25.4:554?udp', width=self.image_width, height=self.image_height, show_img=True, crop_frame=[0,599,145,680+145])
         self.gstreamer_camera.start()  # Start the GStreamer pipeline
 
         # Create a CvBridge to convert between OpenCV images and ROS Image messages

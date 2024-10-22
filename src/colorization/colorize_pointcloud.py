@@ -29,13 +29,23 @@ class LidarColorizerNode(Node):
         self.camera_image = None
         self.camera_image_rgb = None
 
-        # Camera intrinsics (provided intrinsics)
-        self.K = np.array([[461.93834,   0.     , 318.05872], 
-                           [0.     , 464.33664, 231.33221], 
+        # # Camera intrinsics (provided intrinsics) 480p
+        # self.K = np.array([[461.93834,   0.     , 318.05872], 
+        #                    [0.     , 464.33664, 231.33221], 
+        #                    [0.     ,   0.     ,   1.     ]])
+
+        # # Distortion coefficients (provided distortion coefficients) 480p
+        # self.dist_coeffs = np.array([0.183058, -0.240628, -0.001085, -0.002892, 0.000000])
+
+        # Camera intrinsics (provided intrinsics) 1080p
+        self.K = np.array([[1043.02215,    0.     ,  963.4692 ], 
+                           [0.     , 1043.30157,  528.77189], 
                            [0.     ,   0.     ,   1.     ]])
 
-        # Distortion coefficients (provided distortion coefficients)
-        self.dist_coeffs = np.array([0.183058, -0.240628, -0.001085, -0.002892, 0.000000])
+        # Distortion coefficients (provided distortion coefficients) 1080p
+        self.dist_coeffs = np.array([0.153638, -0.143077, 0.003250, -0.001801, 0.000000])
+
+
 
         # Transformation from LiDAR to Camera (provided transformation)
         self.T_camera_lidar = self.create_transformation_matrix(
