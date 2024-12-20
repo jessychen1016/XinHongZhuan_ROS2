@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<robot name="ship">
+  <link name="base_link">
+    <visual>
+      <geometry>
+        <mesh filename="./ship_model/boat_v2_L2.123cb2c2d48f-7519-476c-8274-b5bcd578c751/12219_boat_v2_L2.mtl" scale="1 1 1"/>
+      </geometry>
+      <material name="white">
+        <color rgba="1 1 1 1"/>
+      </material>
+    </visual>
+  </link>
+</robot>

@@ -12,4 +12,4 @@ build_isolated/
 devel_isolated/
 *.pyc
 *.pt
-
+src/image_seg/training/

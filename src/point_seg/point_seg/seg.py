@@ -20,7 +20,7 @@ class PointCloudSubscriber(Node):
         super().__init__('pointcloud_subscriber')
         self.subscription = self.create_subscription(
             PointCloud2,
-            '/lidar_points',  # Replace with your point cloud topic
+            '/lidar_points_1',  # Replace with your point cloud topic
             self.listener_callback,
             10
         )
@@ -48,7 +48,7 @@ class PointCloudSubscriber(Node):
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(point_cloud_np)
         colored_pcd = scanclustering(copy.deepcopy(pcd).voxel_down_sample(voxel_size=0.05))
-        downpcd = pcd.voxel_down_sample(voxel_size=0.05)
+        downpcd = pcd.voxel_down_sample(voxel_size=0.001)
         # print(downpcd)
         downpcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
         # using all defaults

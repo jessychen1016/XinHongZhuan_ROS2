@@ -7,15 +7,15 @@ from ultralytics import YOLO
 # Set up the ZeroMQ context and subscriber socket
 context = zmq.Context()
 socket = context.socket(zmq.SUB)
-socket.connect("tcp://localhost:5555")  # Connect to the publisher
+socket.connect("tcp://localhost:5557")  # Connect to the publisher
 socket.setsockopt_string(zmq.SUBSCRIBE, "")  # Subscribe to all messages\
 
 zmq_send_context = zmq.Context()
 send_socket = zmq_send_context.socket(zmq.PUB)
-send_socket.bind("tcp://*:5556")  # Binding to port 5555 for sending images
+send_socket.bind("tcp://*:5558")  # Binding to port 5555 for sending images
 
 
-model = YOLO("./yolo11x-seg.pt") 
+model = YOLO("./yolov8x-seg.pt") 
 init = True
 
 

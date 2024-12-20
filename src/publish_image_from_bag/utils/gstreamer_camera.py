@@ -10,12 +10,12 @@ gi.require_version('Gst', '1.0')
 from gi.repository import Gst
 
 class GStreamerCamera:
-    def __init__(self, rtsp_url='rtsp://admin:abcd1234@10.1.25.18:554', show_img= False, crop_frame=True):
+    def __init__(self, device='/dev/video2', width=1920, height=1080, framerate=30, show_img= False):
         Gst.init(None)
 
         # Create a GStreamer pipeline
         self.pipeline = Gst.parse_launch(
-            f'rtspsrc location={rtsp_url} latency=0 ! decodebin ! videoconvert ! video/x-raw,format=BGR ! appsink name=sink drop=true max-buffers=1'
+            f'v4l2src device={device} ! image/jpeg,width={width},height={height},framerate={framerate}/1 ! jpegdec ! videoconvert ! video/x-raw,format=BGR ! appsink name=sink drop=true max-buffers=1'
         )
 
         # Get the appsink element
@@ -23,7 +23,6 @@ class GStreamerCamera:
         self.appsink.set_property('emit-signals', True)
         self.appsink.set_property('sync', False)
         self.show_image = show_img
-        self.crop_frame = crop_frame
 
         # Queue for holding frames
         self.frame_queue = queue.Queue(maxsize=1)
@@ -35,9 +34,8 @@ class GStreamerCamera:
         self.running = True
 
         # Start the frame processing thread
-        if self.show_image: 
-            self.processing_thread = threading.Thread(target=self.process_frames)
-            self.processing_thread.start()
+        self.processing_thread = threading.Thread(target=self.process_frames)
+        self.processing_thread.start()
 
     def new_sample(self, sink):
         sample = sink.emit('pull-sample')
@@ -65,12 +63,7 @@ class GStreamerCamera:
         else:
             print(f"Unexpected frame size: {frame.size}")
             return Gst.FlowReturn.ERROR
-        
-        # print(bgr_frame.shape)
-        
-        if self.crop_frame is not None:
-            # print(self.crop_frame)
-            bgr_frame = bgr_frame[self.crop_frame[0]:self.crop_frame[1], self.crop_frame[2]:self.crop_frame[3]]
+
         # Put the frame into the queue for processing
         try:
             self.frame_queue.put_nowait(bgr_frame)
@@ -85,11 +78,11 @@ class GStreamerCamera:
                 # Get a frame from the queue
                 frame = self.frame_queue.get(timeout=1)  # Wait for 1 second for a frame
                 
-                
-                cv2.imshow('Video Stream', frame)
-                # Handle OpenCV events and exit condition
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    self.running = False
+                if self.show_image: 
+                    cv2.imshow('Video Stream', frame)
+                    # Handle OpenCV events and exit condition
+                    if cv2.waitKey(1) & 0xFF == ord('q'):
+                        self.running = False
 
             except queue.Empty:
                 continue

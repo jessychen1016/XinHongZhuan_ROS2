@@ -1,6 +1,6 @@
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import PointCloud2, Image, PointField
+from sensor_msgs.msg import PointCloud2, Image, PointField, CameraInfo
 from sensor_msgs_py.point_cloud2 import read_points, create_cloud
 import numpy as np
 import ros2_numpy
@@ -11,11 +11,13 @@ class LidarColorizerNode(Node):
     def __init__(self):
         super().__init__('lidar_colorizer_node')
         self.pointcloud_sub = self.create_subscription(
-            PointCloud2, '/lidar_points', self.pointcloud_callback, 10)
+            PointCloud2, '/lidar_points_1', self.pointcloud_callback, 10)
         self.image_sub = self.create_subscription(
-            Image, '/camera/image', self.image_callback, 10)
+            Image, '/camera/image1', self.image_callback, 10)
         self.semantic_image_sub = self.create_subscription(
             Image, '/camera/semantic_image', self.semantic_image_callback, 10)
+        self.camera_info_sub = self.create_subscription(
+            CameraInfo, '/camera1/camera_info', self.camera_info_callback, 10)
         self.pointcloud_pub = self.create_publisher(
             PointCloud2, '/lidar/colorized_points', 10)
         self.semantic_pointcloud_pub = self.create_publisher(
@@ -28,31 +30,60 @@ class LidarColorizerNode(Node):
         self.bridge = CvBridge()
         self.camera_image = None
         self.camera_image_rgb = None
+        self.intrinsics = None
+        self.dist_coeffs = None
+        self.semantic_image_rgb = None
 
         # # Camera intrinsics (provided intrinsics) 480p
-        # self.K = np.array([[461.93834,   0.     , 318.05872], 
+        # self.intrinsics = np.array([[461.93834,   0.     , 318.05872], 
         #                    [0.     , 464.33664, 231.33221], 
         #                    [0.     ,   0.     ,   1.     ]])
 
         # # Distortion coefficients (provided distortion coefficients) 480p
         # self.dist_coeffs = np.array([0.183058, -0.240628, -0.001085, -0.002892, 0.000000])
 
-        # Camera intrinsics (provided intrinsics) 1080p
-        self.K = np.array([[1043.02215,    0.     ,  963.4692 ], 
-                           [0.     , 1043.30157,  528.77189], 
-                           [0.     ,   0.     ,   1.     ]])
+        # # Camera intrinsics (provided intrinsics) 1080p
+        # self.intrinsics = np.array([[1043.02215,    0.     ,  963.4692 ], 
+        #                    [0.     , 1043.30157,  528.77189], 
+        #                    [0.     ,   0.     ,   1.     ]])
+        
+        # Camera intrinsics (provided intrinsics) building19
+        # self.intrinsics = np.array([[738.25918,   0.     , 341.79582 ], 
+        #                    [0.     , 873.28272, 406.01293], 
+        #                    [0.     ,   0.     ,   1.     ]])
 
         # Distortion coefficients (provided distortion coefficients) 1080p
-        self.dist_coeffs = np.array([0.153638, -0.143077, 0.003250, -0.001801, 0.000000])
+        # self.dist_coeffs = np.array([-0.352735, 0.106960, -0.001564, -0.004990, 0.000000])
 
 
 
-        # Transformation from LiDAR to Camera (provided transformation)
+        # # Transformation from LiDAR to Camera (provided transformation) home
+        # self.T_camera_lidar = self.create_transformation_matrix(
+        #     translation=[-0.30219897627830505, 0.06125678867101669, 0.04833770543336868],
+        #     quaternion=[-0.5033807312037768, 0.47727347938784354, -0.5103808193751581, 0.5082610304402359]
+        # )
+
+        # Transformation from LiDAR to Camera (provided transformation) building19
+        # self.T_camera_lidar = self.create_transformation_matrix(
+        #     translation=[-1.2147770513409077,
+        #                  -0.17168328344461564,
+        #                  -0.18913718052262876],
+        #     quaternion=[0.5379907546876916,
+        #                 -0.5061380151208289,
+        #                 0.4711163802075949,
+        #                 -0.4821199164318029])
+        
+        # Transformation from LiDAR to Camera (provided transformation) xinhongzhuan_right_front
         self.T_camera_lidar = self.create_transformation_matrix(
-            translation=[-0.30219897627830505, 0.06125678867101669, 0.04833770543336868],
-            quaternion=[-0.5033807312037768, 0.47727347938784354, -0.5103808193751581, 0.5082610304402359]
-        )
+            translation=[-0.6400635144224952, 1.3021074128776047, 0.3178263026781313],
+            quaternion=[-0.2410176235368405, 0.7001270483355837, -0.1846436542636255, 0.6462502164593307])
         self.T_lidar_camera = np.linalg.inv(self.T_camera_lidar)
+    
+    def camera_info_callback(self, msg):
+        if self.intrinsics is None:
+            self.intrinsics = np.array(msg.k).reshape((3, 3))
+            self.dist_coeffs = np.array(msg.d)
+            # print(self.intrinsics)
 
     def image_callback(self, msg):
         
@@ -86,12 +117,18 @@ class LidarColorizerNode(Node):
         # Apply the transformation (from LiDAR to camera)
         points_camera = self.T_lidar_camera @ homogeneous_points.T
 
-        # Project points onto the image plane
-        uvs = self.K @ points_camera[:3, :]
-        uvs /= points_camera[2, :]  # Normalize by Z (depth)
+        # # Project points onto the image plane
+        # uvs = self.intrinsics @ points_camera[:3, :]
+        # uvs /= points_camera[2, :]  # Normalize by Z (depth)
 
-        # Distort the image points using the distortion coefficients
-        uvs_undistorted = self.undistort_points(uvs[:2, :])
+        # # Distort the image points using the distortion coefficients
+        # uvs_undistorted = self.undistort_points(uvs[:2, :])
+
+        # print(uvs_undistorted.shape)
+
+        uvs_undistorted, _ = cv2.projectPoints(points_camera[:3, :].T, np.zeros(3), np.zeros(3), self.intrinsics, self.dist_coeffs)
+        uvs_undistorted = np.transpose(uvs_undistorted,(1,2,0))[0,:]
+        # print(uvs_undistorted.shape)
 
         # Filter points within camera bounds and in front of the camera
         valid_mask = (uvs_undistorted[0, :] >= 0) & (uvs_undistorted[0, :] < self.camera_image.shape[1]) & \
@@ -103,9 +140,9 @@ class LidarColorizerNode(Node):
         # Generate the depth map from the Z coordinates
         depth_map = np.zeros((self.camera_image_rgb.shape[0], self.camera_image_rgb.shape[1]), dtype=np.float32)
         depth_map[valid_uvs[1, :].astype(int), valid_uvs[0, :].astype(int)] = valid_points[2, :]
-        print(depth_map.max())
-        print(depth_map.min())
-        print(depth_map.shape)
+        # print(depth_map.max())
+        # print(depth_map.min())
+        # print(depth_map.shape)
         # Normalize depth map for visualization (optional)
         depth_map_normalized = cv2.normalize(depth_map, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
         # Create a 4-channel image (RGB + depth)
@@ -119,11 +156,11 @@ class LidarColorizerNode(Node):
 
         # Assign colors to the valid points
         colors = 255 - self.camera_image_rgb[valid_uvs[1, :].astype(int), valid_uvs[0, :].astype(int)]
-        semantic_colors = 255 - self.semantic_image_rgb[valid_uvs[1, :].astype(int), valid_uvs[0, :].astype(int)]
-        # print(colors.dtype)
-        # for i in range(colors.shape[0]):
-        #     if colors[i,0] == 0 and colors[i,1] == 0 and colors[i,2] == 0:
-        #         colors[i,:] = [254,254,254]
+        if self.semantic_image_rgb is None:
+            semantic_colors = colors
+        else:
+            semantic_colors = 255 - self.semantic_image_rgb[valid_uvs[1, :].astype(int), valid_uvs[0, :].astype(int)]
+
         
         
         colorized_points = np.hstack((valid_points[:3, :].T, colors))
@@ -173,7 +210,7 @@ class LidarColorizerNode(Node):
     def undistort_points(self, uvs):
         """ Undistort 2D points using the distortion coefficients and camera intrinsics """
         uvs = uvs.T.reshape(-1, 1, 2)  # Reshape to (N, 1, 2) format required by OpenCV
-        uvs_undistorted = cv2.undistortPoints(uvs, self.K, self.dist_coeffs, None, self.K)
+        uvs_undistorted = cv2.undistortPoints(uvs, self.intrinsics, self.dist_coeffs, None, self.intrinsics)
         return uvs_undistorted.squeeze().T  # Return in shape (2, N)
     
     def transform_back(self, point_cloud):

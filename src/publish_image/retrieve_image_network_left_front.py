@@ -13,24 +13,26 @@ class MultiTopicPublisher(Node):
     def __init__(self):
         super().__init__('multi_topic_publisher')
 
-        self.image_height = 1080
-        self.image_width = 1920
+        self.image_height = 599
+        self.image_width = 680
         self.zmq_context = zmq.Context()
         self.socket = self.zmq_context.socket(zmq.PUB)
-        self.socket.bind("tcp://*:5555")  # Binding to port 5555 for sending images
+        self.socket.bind("tcp://*:5559")  # Binding to port 5555 for sending images
 
         self.receive_context = zmq.Context()
         self.receive_socket = self.receive_context.socket(zmq.SUB)
-        self.receive_socket.connect("tcp://localhost:5556")  # Binding to port 5556 for receiving images
+        self.receive_socket.connect("tcp://localhost:5560")  # Binding to port 5556 for receiving images
         self.receive_socket.setsockopt_string(zmq.SUBSCRIBE, "")  # Subscribe to all messages
 
         # Create publishers for multiple topics
-        self.image_publisher = self.create_publisher(Image, 'camera/image', 1)
-        self.semantic_publisher = self.create_publisher(Image, 'camera/semantic_image', 1)
+        self.image_publisher = self.create_publisher(Image, 'camera/image2', 1)
+        self.semantic_publisher = self.create_publisher(Image, 'camera/semantic_image2', 1)
         self.camera_info_publisher = self.create_publisher(CameraInfo, 'camera/camera_info', 10)
 
         # Initialize the GStreamer camera
-        self.gstreamer_camera = GStreamerCamera(rtsp_url='rtsp://admin:admin123@10.1.25.4:554?udp', width=self.image_width, height=self.image_height, show_img=True, crop_frame=[0,599,145,680+145])
+        # self.gstreamer_camera = GStreamerCamera(rtsp_url='rtsp://admin:abcd1234@10.1.25.18:554?udp',  show_img=False, crop_frame=[0,599,145,680+145])
+        self.gstreamer_camera = GStreamerCamera(rtsp_url='rtsp://admin:abcd1234@10.1.25.18:554?udp',  show_img=False, crop_frame=None)
+
         self.gstreamer_camera.start()  # Start the GStreamer pipeline
 
         # Create a CvBridge to convert between OpenCV images and ROS Image messages
@@ -99,16 +101,15 @@ class MultiTopicPublisher(Node):
         camera_info_msg.width = self.image_width
         camera_info_msg.height = self.image_height
         
-        # Set intrinsic parameters for 1080p
-        camera_info_msg.k = [1043.02215,    0.     ,  963.4692 ,
-                              0.     , 1043.30157,  528.77189,
-                              0.     ,    0.     ,    1.     ]
-        camera_info_msg.d = [0.153638, -0.143077, 0.003250, -0.001801, 0.000000]
+        # Set intrinsic parameters for building19
+        camera_info_msg.k = [738.25918,   0.     , 341.79582,
+           0.     , 873.28272, 406.01293,
+           0.     ,   0.     ,   1.     ]
         camera_info_msg.distortion_model = "plumb_bob"
         camera_info_msg.r = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
-        camera_info_msg.p = [1075.50488,    0.     ,  958.35386,    0.     ,
-                              0.     , 1085.85059,  531.53889,    0.     ,
-                              0.     ,    0.     ,    1.     ,    0.     ]
+        camera_info_msg.p = [676.38818,   0.     , 338.31254,   0.     ,
+           0.     , 818.03912, 413.78589,   0.     ,
+           0.     ,   0.     ,   1.     ,   0.     ]
 
         # Publish the CameraInfo message
         self.camera_info_publisher.publish(camera_info_msg)
