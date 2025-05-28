@@ -13,7 +13,7 @@
   </link>
 
   <!-- A child link -->
-  <link name="hesai_at128">
+  <link name="ship_center">
     <visual>
       <geometry>
         <cylinder length="0.5" radius="0.1"/>
@@ -27,7 +27,7 @@
   <!-- Joint to connect links -->
   <joint name="base_to_lidar" type="fixed">
     <parent link="base_link"/>
-    <child link="hesai_at128"/>
+    <child link="ship_center"/>
     <origin xyz="0 0 0.5" rpy="0 0 0"/>
   </joint>
 </robot>

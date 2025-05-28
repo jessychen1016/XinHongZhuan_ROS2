@@ -1,0 +1,3 @@
+# Cluster configuration
+cluster_number: 1
+  # D efault value, can be changed during runtime

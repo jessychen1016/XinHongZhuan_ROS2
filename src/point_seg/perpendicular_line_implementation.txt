@@ -1,0 +1,82 @@
+Here's the complete implementation to add perpendicular line calculation and publishing to bay_extract/boao.py:
+
+1. Add this new class definition after the ShorelinePublisher class:
+
+```python
+class PerpendicularLinePublisher(Node):
+    def __init__(self):
+        super().__init__('perpendicular_line_publisher')
+        self.publisher = self.create_publisher(PointCloud2, '/perpen_line', 1)
+
+    def pointcloud_publish(self, points):
+        header = Header()
+        header.stamp = self.get_clock().now().to_msg()
+        header.frame_id = 'hesai_at128'
+        pc_data = pc2.create_cloud_xyz32(header, points)
+        self.publisher.publish(pc_data)
+```
+
+2. Modify the process_point_cloud method to include this new section after the RANSAC fitting:
+
+```python
+            # Calculate and publish perpendicular lines
+            perp_lines = []
+            for cluster_id in np.unique(clusters):
+                cluster_points = closest_points[clusters == cluster_id]
+                if len(cluster_points) > 1:
+                    X = cluster_points[:, 0].reshape(-1, 1)
+                    y = cluster_points[:, 1]
+                    ransac = RANSACRegressor(random_state=42)
+                    ransac.fit(X, y)
+                    
+                    # Get line parameters (y = mx + b)
+                    m = ransac.estimator_.coef_[0]
+                    b = ransac.estimator_.intercept_
+                    
+                    # Calculate perpendicular line from origin
+                    if m != 0:  # Non-vertical line
+                        # Perpendicular slope
+                        m_perp = -1/m
+                        # Intersection point
+                        x_intersect = b/(m_perp - m)
+                        y_intersect = m_perp * x_intersect
+                    else:  # Horizontal line (y = b)
+                        x_intersect = 0
+                        y_intersect = b
+                    
+                    # Create line segment from origin to intersection point
+                    perp_line = np.array([[0, 0, 0], [x_intersect, y_intersect, 0]])
+                    perp_lines.append(perp_line)
+            
+            # Publish all perpendicular lines
+            if perp_lines:
+                perp_points = np.vstack(perp_lines)
+                perpendicular_publisher.pointcloud_publish(perp_points)
+```
+
+3. Update the main function to initialize the new publisher:
+
+```python
+def main(args=None):
+    rclpy.init(args=args)
+    pointcloud_subscriber = PointCloudSubscriber()
+    global shoreline_publisher
+    global perpendicular_publisher
+    shoreline_publisher = ShorelinePublisher()
+    perpendicular_publisher = PerpendicularLinePublisher()
+    try:
+        rclpy.spin(pointcloud_subscriber)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        pointcloud_subscriber.destroy_node()
+        shoreline_publisher.destroy_node()
+        perpendicular_publisher.destroy_node()
+        rclpy.shutdown()
+```
+
+Key features of this implementation:
+- Handles both regular and edge cases (vertical/horizontal lines)
+- Publishes line segments from origin to intersection points
+- Maintains the existing functionality while adding the new feature
+- Uses the same coordinate frame as the original implementation

@@ -10,29 +10,7 @@ from cv_bridge import CvBridge
 class LidarColorizerNode(Node):
     def __init__(self):
         super().__init__('lidar_colorizer_node')
-        self.pointcloud_sub = self.create_subscription(
-            PointCloud2, '/lidar_points_1', self.pointcloud_callback, 10)
-        self.image_sub = self.create_subscription(
-            Image, '/camera/image1', self.image_callback, 10)
-        self.semantic_image_sub = self.create_subscription(
-            Image, '/camera/semantic_image', self.semantic_image_callback, 10)
-        self.camera_info_sub = self.create_subscription(
-            CameraInfo, '/camera1/camera_info', self.camera_info_callback, 10)
-        self.pointcloud_pub = self.create_publisher(
-            PointCloud2, '/lidar/colorized_points', 10)
-        self.semantic_pointcloud_pub = self.create_publisher(
-            PointCloud2, '/lidar/semantic_points', 10)
-        self.rgbd_pub = self.create_publisher(
-            Image, '/camera/rgbd_image', 30)
-        self.depth_pub = self.create_publisher(
-            Image, '/camera/depth_image', 30)
-        
-        self.bridge = CvBridge()
-        self.camera_image = None
-        self.camera_image_rgb = None
-        self.intrinsics = None
-        self.dist_coeffs = None
-        self.semantic_image_rgb = None
+
 
         # # Camera intrinsics (provided intrinsics) 480p
         # self.intrinsics = np.array([[461.93834,   0.     , 318.05872], 
@@ -78,6 +56,33 @@ class LidarColorizerNode(Node):
             translation=[-0.6400635144224952, 1.3021074128776047, 0.3178263026781313],
             quaternion=[-0.2410176235368405, 0.7001270483355837, -0.1846436542636255, 0.6462502164593307])
         self.T_lidar_camera = np.linalg.inv(self.T_camera_lidar)
+
+        # print(self.T_lidar_camera)
+
+        self.pointcloud_sub = self.create_subscription(
+            PointCloud2, '/lidar_points_1', self.pointcloud_callback, 10)
+        self.image_sub = self.create_subscription(
+            Image, '/camera1/image', self.image_callback, 10)
+        self.semantic_image_sub = self.create_subscription(
+            Image, '/camera/semantic_image', self.semantic_image_callback, 10)
+        self.camera_info_sub = self.create_subscription(
+            CameraInfo, '/camera1/camera_info', self.camera_info_callback, 10)
+        self.pointcloud_pub = self.create_publisher(
+            PointCloud2, '/lidar/colorized_points', 10)
+        self.semantic_pointcloud_pub = self.create_publisher(
+            PointCloud2, '/lidar/semantic_points', 10)
+        self.rgbd_pub = self.create_publisher(
+            Image, '/camera/rgbd_image', 30)
+        self.depth_pub = self.create_publisher(
+            Image, '/camera/depth_image', 30)
+        
+        self.bridge = CvBridge()
+        self.camera_image = None
+        self.camera_image_rgb = None
+        self.intrinsics = None
+        self.dist_coeffs = None
+        self.semantic_image_rgb = None
+
     
     def camera_info_callback(self, msg):
         if self.intrinsics is None:

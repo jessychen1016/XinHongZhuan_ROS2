@@ -26,7 +26,7 @@ class ShipVisualizer(Node):
         self.timer = self.create_timer(1.0, self.publish_transform_and_pointcloud)
 
         # Ship Model Position (center of the 'hesai_128' frame)
-        self.model_position = [-4.0, -5.0, -6.0]  
+        self.model_position = [.0, 11.0, -8.0]  
 
         # Load the OBJ file using trimesh
         self.obj_filename = './ship_model/boat_v2_L2.123cb2c2d48f-7519-476c-8274-b5bcd578c751/12219_boat_v2_L2.obj'
@@ -39,14 +39,14 @@ class ShipVisualizer(Node):
 
         # Sample points from the OBJ model
         self.points = self.mesh.sample(20000)  # Sampling 1000 points from the model surface
-        self.scale_factor = 0.02  # Scale factor to make the model smaller (change as needed)
+        self.scale_factor = 0.03  # Scale factor to make the model smaller (change as needed)
         self.points *= self.scale_factor  # Apply scaling to the point clo1
 
     def publish_transform_and_pointcloud(self):
         # Publish the transform from hesai_128 to the ship model (e.g., center of frame)
         transform = TransformStamped()
         transform.header.stamp = self.get_clock().now().to_msg()
-        transform.header.frame_id = "hesai_at128"  # Reference frame
+        transform.header.frame_id = "ship_center"  # Reference frame
         transform.child_frame_id = "ship_link"  # The child frame ID for the ship model
         # XYZ Euler angles in radians rpy
         euler_angles = [0, 0, -np.pi/2]  # Replace with your values

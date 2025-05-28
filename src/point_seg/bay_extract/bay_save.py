@@ -3,7 +3,7 @@ from rclpy.node import Node
 import numpy as np
 import ros2_numpy
 from std_msgs.msg import Header
-from sensor_msgs.msg import PointCloud2, PointField
+from sensor_msgs.msg import PointCloud2, PointField, Image
 import sensor_msgs_py.point_cloud2 as pc2
 import matplotlib.pyplot as plt
 from sensor_msgs_py.point_cloud2 import read_points, create_cloud
@@ -19,18 +19,30 @@ class PointCloudSubscriber(Node):
             self.listener_callback,
             10
         )
+        self.subscription_image = self.create_subscription(
+            Image,
+            '/camera/image1',  # Replace with your point cloud topic
+            self.image_callback,
+            10
+        )
         self.subscription
         self.point_cloud_data = None
+        self.timestamp = None
         self.closest_points_file = "shoreline_with_timestamps.txt"
+        self.save_flag = 0
 
     def listener_callback(self, msg):
         # Read the point cloud data
         # self.point_cloud_data = pc2.read_points(msg, field_names=['x', 'y', 'z', "intensity"], skip_nans=True)
         pc = ros2_numpy.numpify(msg)
         self.points=pc['xyz']
-        self.process_point_cloud(msg.header.stamp)
+        self.process_point_cloud()
 
-    def process_point_cloud(self, timestamp):
+    def image_callback(self, msg):
+
+        self.timestamp = msg.header.stamp
+
+    def process_point_cloud(self):
         if self.points is None:
             return
         fov =[-60,60] #degrees
@@ -68,6 +80,20 @@ class PointCloudSubscriber(Node):
         closest_points_3d = np.hstack((closest_points, np.zeros((closest_points.shape[0], 1))))
         closest_points_3d = assign_z_to_2d_points(closest_points, point_cloud_np)
         shoreline_publisher.pointcloud_publish(closest_points_3d)
+        self.save_flag += 1
+        if self.save_flag % 3 == 0:
+            self.save_data(closest_points)
+            self.save_flag  = 0
+
+    def save_data(self, closest_points):
+        # Convert ROS2 timestamp to seconds
+        time_in_sec = self.timestamp.sec + self.timestamp.nanosec * 1e-9
+
+        # Write each point with its timestamp to the file
+        with open(self.closest_points_file, "a") as f:
+            f.write(f"{time_in_sec:.6f} {closest_points} \n")
+            # for point in closest_points:
+            #     f.write(f"{time_in_sec:.6f} {point[0]:.6f} {point[1]:.6f}\n")
 
 class ShorelinePublisher(Node):
     def __init__(self):
