@@ -2,9 +2,11 @@ import socket
 import struct
 import rclpy
 import time
+import numpy as np
 from rclpy.node import Node
 from sensor_msgs.msg import Imu
-import math
+from geometry_msgs.msg import Vector3Stamped
+from imu_tools.imu_filter import Simple1DKalman, quaternion_to_rotation_matrix
 
 def build_packet(data_points, device_id=123, cmd_type=1, start_addr=0, packet_num=1):
     m_send_dataNum = len(data_points)
@@ -39,6 +41,31 @@ class IMUTCPClient(Node):
             self.imu_callback,
             10)
         
+        # IMU processing setup
+        self.rate = 25.0
+        self.dt = 1.0 / self.rate
+        self.gyro_noise_density = 9.383292965348195e-05
+        self.gyro_random_walk = 1.0782014013440132e-05
+        self.accel_noise_density = 6.317082483789875e-04
+        self.accel_random_walk = 7.641488363632991e-05
+        
+        # Initialize Kalman filters
+        self.kalman_gyro = [Simple1DKalman(
+            process_var=self.gyro_noise_density ** 2,
+            bias_var=self.gyro_random_walk ** 2,
+            meas_var=self.gyro_noise_density ** 2,
+            dt=self.dt
+        ) for _ in range(3)]
+        self.kalman_accel = [Simple1DKalman(
+            process_var=self.accel_noise_density ** 2,
+            bias_var=self.accel_random_walk ** 2,
+            meas_var=self.accel_noise_density ** 2,
+            dt=self.dt
+        ) for _ in range(3)]
+        
+        self.linear_velocity = np.zeros(3)
+        self.prev_stamp = None
+        
         # TCP client setup
         self.host = '10.1.5.7'  # Server IP
         self.port = 7546        # Port 9 as requested
@@ -59,17 +86,48 @@ class IMUTCPClient(Node):
                 time.sleep(5)
 
     def imu_callback(self, msg):
-        # Get z-axis angular velocity directly
-        z_velocity = msg.angular_velocity.z
-        x_acc = msg.linear_acceleration.x
-        y_acc = msg.linear_acceleration.y
-        # print(f'Received angular velocity z: {z_velocity:.2f} rad/s')
+        # Time handling
+        stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        if self.prev_stamp is not None:
+            dt = stamp - self.prev_stamp
+            if dt < 1e-4 or dt > 1.0:
+                dt = self.dt
+        else:
+            dt = self.dt
+        self.prev_stamp = stamp
         
-        # Create data array with z velocity in position #9 (as per test_tcp_send.py example)
-        data_points = [0.0] * 3  # Initialize with zeros
-        data_points[0] = z_velocity
-        data_points[1] = x_acc
-        data_points[2] = y_acc
+        # Update Kalman filter time steps
+        for kf in self.kalman_gyro:
+            kf.dt = dt
+        for kf in self.kalman_accel:
+            kf.dt = dt
+
+        # Get raw measurements
+        gyro = np.array([msg.angular_velocity.x, msg.angular_velocity.y, msg.angular_velocity.z])
+        accel = np.array([msg.linear_acceleration.x, msg.linear_acceleration.y, msg.linear_acceleration.z])
+
+        # Apply Kalman filtering
+        filtered_gyro = np.zeros(3)
+        for i in range(3):
+            filtered_gyro[i], _ = self.kalman_gyro[i].filter(gyro[i])
+        
+        filtered_accel = np.zeros(3)
+        for i in range(3):
+            filtered_accel[i], _ = self.kalman_accel[i].filter(accel[i])
+
+        # Remove gravity and integrate velocity
+        q = [msg.orientation.x, msg.orientation.y, msg.orientation.z, msg.orientation.w]
+        R = quaternion_to_rotation_matrix(q)
+        g_world = np.array([0, 0, 9.80665])
+        g_body = R.T @ g_world
+        accel_nogravity = filtered_accel - g_body
+        accel_world = R @ accel_nogravity
+        self.linear_velocity += accel_world * dt
+        
+        # Create data array with filtered gyro and linear velocity
+        data_points = [0.0] * 6  # 3 for gyro, 3 for velocity  rot_x, rot_y, rot_z, vel_x, vel_y, vel_z
+        data_points[0:3] = filtered_gyro.tolist()
+        data_points[3:6] = self.linear_velocity.tolist() 
         
         # Build and send packet
         packet = build_packet(data_points, device_id=123, packet_num=self.packet_num)
@@ -78,7 +136,7 @@ class IMUTCPClient(Node):
                 self.connect_to_server()
             self.socket.sendall(packet)
             time.sleep(1)
-            self.get_logger().info(f'Sent angular velocity z: {z_velocity:.2f} rad/s')
+            self.get_logger().info(f'Sent filtered gyro: {filtered_gyro.tolist()}, velocity: {self.linear_velocity.tolist()}')
         except (socket.error, ConnectionResetError) as e:
             self.get_logger().error(f'Send failed: {str(e)}. Reconnecting...')
             self.socket = None

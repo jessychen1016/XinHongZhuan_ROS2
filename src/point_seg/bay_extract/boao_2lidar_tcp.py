@@ -162,6 +162,11 @@ class PointCloudSubscriber(Node):
         self.fov_lidar = [-90,90]
         self.filter_window = 5  # Default filter window size
         self.line_history = {}  # Stores history of fitted lines per cluster
+        
+        # For speed calculation
+        self.prev_distance_0 = None
+        self.prev_distance_1 = None
+        self.prev_time = None
         self.load_config()
         
         # Setup config file watcher
@@ -214,7 +219,7 @@ class PointCloudSubscriber(Node):
         self.check_and_process(msg.header.stamp)
     def imu_callback(self, msg):
         # Get z-axis angular velocity directly
-        self.imu_rot_yaw = msg.angular_velocity.z/np.pi*180*60 - 5 #degree/min
+        self.imu_rot_yaw = -(msg.angular_velocity.z/np.pi*180*60 - 5) #degree/min
         # print(f'Received angular velocity z: {self.imu_rot_yaw:.2f} degree/min')
         
     def check_and_process(self, stamp):
@@ -283,7 +288,7 @@ class PointCloudSubscriber(Node):
         closest_points = closest_points[angles.argsort()]
 
         # Filter points
-        closest_points = closest_points[closest_points[:, 0] > 0.2]
+        closest_points = closest_points[closest_points[:, 0] > 1]
         
         # Publish closest points
         closest_points_3d = np.hstack((closest_points, np.zeros((closest_points.shape[0], 1))))
@@ -400,15 +405,35 @@ class PointCloudSubscriber(Node):
                         # Create data_points array with distances and other relevant data
                         # self.rand_add = self.rand_add + 0.001
                         center_distance_to_flag = distance_along_line(self.shoreline_lat0, self.shoreline_long0, self.shoreline_lat1, self.shoreline_long1,lat_ship,long_ship,lat_flag,long_flag)
-                        print(center_distance_to_flag)
+                        # print(center_distance_to_flag)
+                        # Calculate speeds if we have previous measurements
+                        fore_speed = 0
+                        center_speed = 0
+                        aft_speed = 0
+                        current_time = timestamp.nanosec * 1e-9 + timestamp.sec
+                        
+                        if self.prev_time is not None:
+                            time_diff = current_time - self.prev_time
+                            if time_diff > 0:
+                                fore_speed = (distance_origin_0 - self.prev_distance_0) / time_diff
+                                aft_speed = (distance_origin_1 - self.prev_distance_1) / time_diff
+                        print("fore distance", distance_origin_0)
+                        print("aft distance", distance_origin_1)
+                        print("fore speed", fore_speed)
+                        print("aft speed", aft_speed)
+                        # Store current values for next calculation
+                        self.prev_distance_0 = distance_origin_0
+                        self.prev_distance_1 = distance_origin_1
+                        self.prev_time = current_time
+                        
                         data_points = [
                             distance_origin_0,
                             center_distance_to_flag, # center to flag
                             distance_origin_1,
                             0, # deviation
-                            0, # fore speed
-                            0, # center speed
-                            0, # aft speed
+                            fore_speed, # fore speed
+                            center_speed, # center speed
+                            aft_speed, # aft speed
                             0, # fore heading angle
                             self.imu_rot_yaw, # v_rot_yaw
                             222, # drift
