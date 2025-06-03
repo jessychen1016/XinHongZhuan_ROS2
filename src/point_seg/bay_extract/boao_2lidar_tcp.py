@@ -59,7 +59,7 @@ def build_packet(data_points, device_id=111, cmd_type=1, start_addr=0, packet_nu
     return Head + data_section
 
 class AsyncTCPServer:
-    def __init__(self, host='10.1.5.16', port=12345):
+    def __init__(self, host='10.1.5.166', port=12345):
         self.host = host
         self.port = port
         self.clients = set()
@@ -108,17 +108,16 @@ class AsyncTCPServer:
 
                                 print(f"Updated ship position: {long_ship}, {lat_ship}, {heading_anlge}")
                                 print(f"Updated flag position: {long_flag}, {lat_flag}, {heading_anlge}")
-                                response = build_packet([1])  # Ack
+                                response = b'\x01'  # Simple ACK byte
                             else:
-                                response = build_packet([0])  # Error - not enough data points
+                                response = b'\x00'  # Simple NAK byte
                         else:
-                            response = build_packet([0])  # Error - malformed data
+                            response = b'\x00'  # Simple NAK byte
                     else:
-                        # Default response with sample data
-                        response = build_packet([1.0, 2.0, 3.0])
+                        response = b''  # No response for small packets
                 except Exception as e:
                     print(f"Error processing data from {addr}: {e}")
-                    response = build_packet([0])  # Error
+                    response = b'\x00'  # Simple NAK byte
                     
                 writer.write(response)
                 await writer.drain()
@@ -155,6 +154,12 @@ class PointCloudSubscriber(Node):
         self.tcp_server = tcp_server
         self.config_path = os.path.join(os.path.dirname(__file__), 'cluster_config.yaml')
         self.cluster_number = 1
+        self.filter_en = 0
+        self.filter_x_max = 200
+        self.filter_x_min = 0
+        self.filter_z_max = 30
+        self.filter_z_min = -30
+        self.fov_lidar = [-90,90]
         self.filter_window = 5  # Default filter window size
         self.line_history = {}  # Stores history of fitted lines per cluster
         self.load_config()
@@ -209,15 +214,21 @@ class PointCloudSubscriber(Node):
         self.check_and_process(msg.header.stamp)
     def imu_callback(self, msg):
         # Get z-axis angular velocity directly
-        self.imu_rot_yaw = msg.angular_velocity.z
-        # print(f'Received angular velocity z: {self.imu_rot_yaw:.2f} rad/s')
+        self.imu_rot_yaw = msg.angular_velocity.z/np.pi*180*60 - 5 #degree/min
+        # print(f'Received angular velocity z: {self.imu_rot_yaw:.2f} degree/min')
         
     def check_and_process(self, stamp):
         # Only process when we have data from both lidars
         if self.points1 is not None and self.points2 is not None:
             # Merge the point clouds and filter by z >= -0.5
             self.points = np.concatenate((self.points1, self.points2))
-            self.points = self.points[self.points[:, 2] >= -0.5]  # Keep only points with z >= -0.5
+            if self.filter_en:
+                # Apply all filters from config
+                mask = (self.points[:, 0] <= self.filter_x_max) &\
+                       (self.points[:, 0] >= self.filter_x_min) & \
+                       (self.points[:, 2] <= self.filter_z_max) & \
+                       (self.points[:, 2] >= self.filter_z_min)
+                self.points = self.points[mask]
             self.process_point_cloud(stamp)
 
     def load_config(self):
@@ -226,7 +237,14 @@ class PointCloudSubscriber(Node):
                 config = yaml.safe_load(f)
                 self.cluster_number = config.get('cluster_number', 1)
                 self.filter_window = config.get('filter_window', 5)
+                self.filter_en = config.get('filter_en', 0)
+                self.filter_x_max = config.get('filter_x', 200)
+                self.filter_x_min = config.get('filter_x', 0)
+                self.filter_z_max = config.get('filter_z_max', 30)
+                self.filter_z_min = config.get('filter_z_min', -30)
+                self.fov_lidar = config.get('fov_lidar', [-90,90])
                 self.get_logger().info(f"Loaded config - cluster_number: {self.cluster_number}, filter_window: {self.filter_window}")
+                self.get_logger().info(f"Loaded config - Apply Filter: {self.filter_en}")
         except Exception as e:
             self.get_logger().error(f"Error loading config: {str(e)}")
             self.cluster_number = 1
@@ -236,7 +254,7 @@ class PointCloudSubscriber(Node):
         if self.points is None:
             return
             
-        fov = [-90,90]  # degrees
+        fov = self.fov_lidar  # degrees
         resolution = 0.5  # degree
 
         # Convert to numpy array and get 2D points
@@ -335,7 +353,7 @@ class PointCloudSubscriber(Node):
                         perp_lines.append(perp_points_origin)
                         
                         # For lidar_1
-                        x0_origin, y0_origin = 4.7, 30
+                        x0_origin, y0_origin = 4.7, 25
                         x0_inter_origin = (m*(y0_origin - c) + x0_origin)/(m**2 + 1)
                         y0_inter_origin = m * x0_inter_origin + c
                         # print("hhhhhhhh", long_ship, lat_ship, heading_anlge)
@@ -350,7 +368,7 @@ class PointCloudSubscriber(Node):
                         perp_lines.append(perp_points_origin)
                         
                         # For lidar_4
-                        x1_origin, y1_origin = 3.7, -9.4
+                        x1_origin, y1_origin = 3.7, -14.4
                         x1_inter_origin = (m*(y1_origin - c) + x1_origin)/(m**2 + 1)
                         y1_inter_origin = m * x1_inter_origin + c
                         aft_gps_long, aft_gps_lat = ship_local_to_gps(y1_origin, x1_origin, long_ship, lat_ship, heading_anlge)
@@ -436,9 +454,13 @@ class PointCloudSubscriber(Node):
                         if self.tcp_server:
                             asyncio.create_task(self.tcp_server.send_data(data_points))
                         
-                        # Start non-blocking listener
-                        listener = keyboard.Listener(on_press=on_press)
-                        listener.start()
+                        # Start non-blocking listener with X display workaround
+                        try:
+                            listener = keyboard.Listener(on_press=on_press)
+                            listener.start()
+                        except Exception as e:
+                            print(f"Keyboard listener initialization warning: {str(e)}")
+                            print("Keyboard input monitoring may not work, but program will continue normally")
 
                         
 

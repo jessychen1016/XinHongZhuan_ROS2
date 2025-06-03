@@ -84,7 +84,7 @@ class PointCloudSubscriber(Node):
         if self.points1 is not None and self.points2 is not None:
             # Merge the point clouds and filter by z >= -0.5
             self.points = np.concatenate((self.points1, self.points2))
-            self.points = self.points[self.points[:, 2] >= -0.5]  # Keep only points with z >= -0.5
+            self.points = self.points[self.points[:, 2] >= -2.5]  # Keep only points with z >= -0.5
             self.process_point_cloud(stamp)
 
     def load_config(self):

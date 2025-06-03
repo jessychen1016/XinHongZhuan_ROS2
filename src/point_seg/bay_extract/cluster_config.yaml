@@ -1,3 +1,9 @@
 # Cluster configuration
 cluster_number: 1
+filter_en: 1
+filter_x_max: 16
+filter_x_min: 15
+filter_z_max: -1
+filter_z_min: -2
+fov_lidar: [-90,90]   #degree
   # D efault value, can be changed during runtime

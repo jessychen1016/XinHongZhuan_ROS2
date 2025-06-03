@@ -1,11 +1,12 @@
 import socket
 import struct
 import rclpy
+import time
 from rclpy.node import Node
 from sensor_msgs.msg import Imu
 import math
 
-def build_packet(data_points, device_id=111, cmd_type=1, start_addr=0, packet_num=1):
+def build_packet(data_points, device_id=123, cmd_type=1, start_addr=0, packet_num=1):
     m_send_dataNum = len(data_points)
     total_bytes = 7 + 4 * m_send_dataNum  # header + data as per protocol
 
@@ -39,25 +40,50 @@ class IMUTCPClient(Node):
             10)
         
         # TCP client setup
-        self.host = '127.0.0.1'  # Server IP
-        self.port = 12345              # Port 9 as requested
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket.connect((self.host, self.port))
+        self.host = '10.1.5.7'  # Server IP
+        self.port = 7546        # Port 9 as requested
+        self.socket = None
         self.packet_num = 1
+        self.connect_to_server()
+
+    def connect_to_server(self):
+        while rclpy.ok():
+            try:
+                self.get_logger().info('Attempting to connect to TCP server...')
+                self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self.socket.connect((self.host, self.port))
+                self.get_logger().info('Successfully connected to TCP server')
+                return
+            except (socket.error, ConnectionRefusedError) as e:
+                self.get_logger().error(f'Connection failed: {str(e)}. Retrying in 5 seconds...')
+                time.sleep(5)
 
     def imu_callback(self, msg):
         # Get z-axis angular velocity directly
         z_velocity = msg.angular_velocity.z
-        print(f'Received angular velocity z: {z_velocity:.2f} rad/s')
+        x_acc = msg.linear_acceleration.x
+        y_acc = msg.linear_acceleration.y
+        # print(f'Received angular velocity z: {z_velocity:.2f} rad/s')
         
         # Create data array with z velocity in position #9 (as per test_tcp_send.py example)
-        data_points = [0.0] * 27  # Initialize with zeros
-        data_points[9] = z_velocity  # Position 9 is rotation speed/yaw angle
+        data_points = [0.0] * 3  # Initialize with zeros
+        data_points[0] = z_velocity
+        data_points[1] = x_acc
+        data_points[2] = y_acc
         
         # Build and send packet
-        packet = build_packet(data_points, device_id=111, packet_num=self.packet_num)
-        self.socket.sendall(packet)
-        self.get_logger().info(f'Sent angular velocity z: {z_velocity:.2f} rad/s')
+        packet = build_packet(data_points, device_id=123, packet_num=self.packet_num)
+        try:
+            if self.socket is None:
+                self.connect_to_server()
+            self.socket.sendall(packet)
+            time.sleep(1)
+            self.get_logger().info(f'Sent angular velocity z: {z_velocity:.2f} rad/s')
+        except (socket.error, ConnectionResetError) as e:
+            self.get_logger().error(f'Send failed: {str(e)}. Reconnecting...')
+            self.socket = None
+            self.connect_to_server()
+            return
         
         self.packet_num = (self.packet_num + 1) % 256  # Wrap at 255
 
